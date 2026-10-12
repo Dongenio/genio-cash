@@ -4,8 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Gênio $</title>
-<meta name="theme-color" content="#1D5BD6" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0D1220" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#F2F4F8">
+<script>
+  // Aplica o tema salvo antes de desenhar a tela (evita piscar)
+  try { document.documentElement.dataset.tema = localStorage.getItem("tema") || "claro"; } catch (e) { document.documentElement.dataset.tema = "claro"; }
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" type="image/png" href="icon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -78,11 +81,23 @@
       <button type="button" class="s" id="tSaida" aria-pressed="true">Saída</button>
       <button type="button" class="e" id="tEntrada" aria-pressed="false">Entrada</button>
     </div>
-    <label>Valor (R$)<input id="f-valor" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
-    <label>Descrição<input id="f-desc" placeholder="Ex.: Almoço, Pix do cliente" maxlength="80" autocomplete="off"></label>
-    <div class="linha">
-      <label>Categoria<select id="f-cat"></select></label>
-      <label>Data<input id="f-data" type="date"></label>
+    <label class="valor-box zerado" for="f-valor">
+      <span class="moeda">R$</span>
+      <input id="f-valor" inputmode="numeric" enterkeyhint="done" autocomplete="off" aria-label="Valor em reais" value="0,00">
+    </label>
+    <label>Descrição<input id="f-desc" list="sugestoes" placeholder="Ex.: Almoço, Pix do cliente" maxlength="80" autocomplete="off"></label>
+    <datalist id="sugestoes"></datalist>
+    <div class="grupo">
+      <span class="rotulo">Categoria</span>
+      <div class="chips" id="f-cats"></div>
+    </div>
+    <div class="grupo">
+      <span class="rotulo">Data</span>
+      <div class="chips">
+        <button type="button" class="chip" id="dHoje">Hoje</button>
+        <button type="button" class="chip" id="dOntem">Ontem</button>
+        <input id="f-data" type="date" class="chip-data" aria-label="Escolher outra data">
+      </div>
     </div>
     <div class="erro" id="fErro"></div>
     <div class="acoes">
@@ -95,11 +110,26 @@
   </form>
 </div>
 
+<!-- ===== AVISO FLUTUANTE ===== -->
+<div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastAcao" hidden>Desfazer</button></div>
+
 <!-- ===== FOLHA: DADOS (exportar / importar / sair) ===== -->
 <div class="veu" id="veuMenu" hidden>
   <div class="folha">
     <h2>Seus dados</h2>
     <p class="sub" id="mEmail"></p>
+    <div class="grupo">
+      <span class="rotulo">Aparência</span>
+      <div class="chips" id="mTema">
+        <button type="button" class="chip" data-tema="claro">Claro</button>
+        <button type="button" class="chip" data-tema="escuro">Escuro</button>
+        <button type="button" class="chip" data-tema="auto">Igual ao celular</button>
+      </div>
+    </div>
+    <div class="grupo">
+      <span class="rotulo">Minhas categorias</span>
+      <div class="chips" id="mCats"></div>
+    </div>
     <button class="b2 cheio" id="mExportar">Baixar backup (.json)</button>
     <label>Importar lançamentos (cole o backup aqui)
       <textarea id="mTexto" rows="4" placeholder='[{"tipo":"saida","valor":2590,...}]'></textarea>

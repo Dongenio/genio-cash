@@ -14,7 +14,8 @@ const CATS = {
 };
 
 /* ===== 3. Estado ===== */
-let lancamentos = [];                    // [{id,tipo,valor,descricao,categoria,data,criado_em}]
+let lancamentos = [];
+let minhasCats = [];                     // categorias criadas por você: [{id,tipo,nome}]                    // [{id,tipo,valor,descricao,categoria,data,criado_em}]
 let mesAtual = hojeISO().slice(0, 7);    // "AAAA-MM"
 let usuario = null;
 
@@ -45,11 +46,21 @@ const banco = {
   async criar(x)       { const { error } = await sb.from("lancamentos").insert(x); if (error) throw error; },
   async criarVarios(l) { const { error } = await sb.from("lancamentos").insert(l); if (error) throw error; },
   async atualizar(id, x){ const { error } = await sb.from("lancamentos").update(x).eq("id", id); if (error) throw error; },
-  async excluir(id)    { const { error } = await sb.from("lancamentos").delete().eq("id", id); if (error) throw error; }
+  async excluir(id)    { const { error } = await sb.from("lancamentos").delete().eq("id", id); if (error) throw error; },
+
+  // Categorias que você cria (tabela "categorias")
+  async listarCats() {
+    const { data, error } = await sb.from("categorias").select("*").order("nome");
+    if (error) throw error;
+    return data;
+  },
+  async criarCat(x)    { const { error } = await sb.from("categorias").insert(x); if (error) throw error; },
+  async excluirCat(id) { const { error } = await sb.from("categorias").delete().eq("id", id); if (error) throw error; }
 };
 async function recarregar() {
   try { lancamentos = await banco.listar(); } catch (e) { console.error(e); }
-  render();
+  try { minhasCats = await banco.listarCats(); } catch (e) { console.error(e); minhasCats = []; }
+  render(); desenharMinhasCats();
 }
 
 /* ===== 6. Login ===== */
@@ -134,50 +145,178 @@ function render() {
 }
 
 /* ===== 8. Formulário de lançamento ===== */
-let editando = null, tipoForm = "saida", confirmaDel = false;
+let editando = null, tipoForm = "saida", catSel = null, centavos = 0;
 
+// --- 8.1 Valor estilo app de banco: só números, preenche da direita (centavos) ---
+const fmtCampo = c => (c / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function setValor(c) {
+  centavos = c;
+  const campo = $("f-valor");
+  campo.value = fmtCampo(c);
+  campo.style.width = (campo.value.length + 0.2) + "ch";   // campo cresce junto com o número
+  campo.closest(".valor-box").classList.toggle("zerado", c === 0);
+  requestAnimationFrame(() => campo.setSelectionRange(campo.value.length, campo.value.length)); // cursor sempre no fim
+}
+$("f-valor").addEventListener("input", e => {
+  const digitos = e.target.value.replace(/\D/g, "").slice(0, 10);   // até R$ 99.999.999,99
+  setValor(Number(digitos || 0));
+});
+$("f-valor").addEventListener("focus", e => setValor(centavos));
+$("f-valor").addEventListener("click", e => setValor(centavos));
+
+// --- 8.2 Categorias em botões (chips) + criar nova ---
+// Lista final: padrões + as suas, com "Outros" sempre por último
+function catsDo(tipo) {
+  const minhas = minhasCats.filter(c => c.tipo === tipo).map(c => c.nome);
+  const base = CATS[tipo].filter(c => c !== "Outros");
+  const lista = [...base, ...minhas.filter(m => !base.includes(m)), "Outros"];
+  if (catSel && !lista.includes(catSel)) lista.splice(lista.length - 1, 0, catSel); // categoria antiga já apagada
+  return lista;
+}
+let criandoCat = false;
+function desenharCats() {
+  const chips = catsDo(tipoForm).map(c =>
+    `<button type="button" class="chip" aria-pressed="${c === catSel}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+  const nova = criandoCat
+    ? `<input class="chip-input" id="catNome" maxlength="24" placeholder="Nome da categoria" autocomplete="off" enterkeyhint="done">`
+    : `<button type="button" class="chip chip-nova" id="catNova">+ Nova</button>`;
+  $("f-cats").innerHTML = chips + nova;
+  if (criandoCat) $("catNome").focus();
+}
+async function salvarNovaCat() {
+  const campo = $("catNome"); if (!campo || !criandoCat) return;
+  const nome = campo.value.trim().replace(/\s+/g, " ");
+  criandoCat = false;
+  if (!nome) { desenharCats(); return; }
+  const existente = catsDo(tipoForm).find(c => c.toLowerCase() === nome.toLowerCase());
+  if (existente) { catSel = existente; desenharCats(); return; }
+  try {
+    await banco.criarCat({ tipo: tipoForm, nome });
+    minhasCats = await banco.listarCats();
+    catSel = nome; desenharMinhasCats();
+  } catch (err) { $("fErro").textContent = "Não criou a categoria: " + err.message; }
+  desenharCats();
+}
+$("f-cats").addEventListener("click", e => {
+  if (e.target.id === "catNova") { criandoCat = true; desenharCats(); return; }
+  const b = e.target.closest(".chip[data-cat]"); if (!b) return;
+  catSel = b.dataset.cat; desenharCats();
+});
+$("f-cats").addEventListener("keydown", e => {
+  if (e.target.id !== "catNome") return;
+  if (e.key === "Enter") { e.preventDefault(); salvarNovaCat(); }   // Enter cria a categoria, não salva o lançamento
+  if (e.key === "Escape") { e.stopPropagation(); criandoCat = false; desenharCats(); }
+});
+$("f-cats").addEventListener("focusout", e => { if (e.target.id === "catNome") salvarNovaCat(); });
+
+// Lista "Minhas categorias" no menu Dados, com botão de remover
+function desenharMinhasCats() {
+  const el = $("mCats"); if (!el) return;
+  if (!minhasCats.length) { el.innerHTML = `<p class="sub">Nenhuma ainda. Crie no botão <b>+ Nova</b> ao lançar.</p>`; return; }
+  el.innerHTML = minhasCats.map(c => `<span class="chip chip-rem">${esc(c.nome)}
+      <small>${c.tipo === "entrada" ? "entrada" : "saída"}</small>
+      <button type="button" data-id="${esc(c.id)}" aria-label="Remover ${esc(c.nome)}">✕</button></span>`).join("");
+}
+$("mCats").addEventListener("click", async e => {
+  const b = e.target.closest("button[data-id]"); if (!b) return;
+  try {
+    await banco.excluirCat(b.dataset.id);
+    minhasCats = await banco.listarCats(); desenharMinhasCats();
+    $("mMsg").className = "erro ok"; $("mMsg").textContent = "Categoria removida. Os lançamentos antigos continuam com ela.";
+  } catch (err) { $("mMsg").className = "erro"; $("mMsg").textContent = "Não removeu: " + err.message; }
+});
+
+// --- 8.3 Data rápida: Hoje / Ontem / escolher ---
+function diaISO(delta) { const d = new Date(); d.setDate(d.getDate() + delta); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); }
+function marcarData() {
+  const v = $("f-data").value;
+  $("dHoje").setAttribute("aria-pressed", v === diaISO(0));
+  $("dOntem").setAttribute("aria-pressed", v === diaISO(-1));
+  $("f-data").classList.toggle("ativo", v !== diaISO(0) && v !== diaISO(-1));
+}
+$("dHoje").onclick = () => { $("f-data").value = diaISO(0); marcarData(); };
+$("dOntem").onclick = () => { $("f-data").value = diaISO(-1); marcarData(); };
+$("f-data").addEventListener("change", marcarData);
+
+// --- 8.4 Sugestões: descrições que você já usou, e a categoria vem junto ---
+function atualizarSugestoes() {
+  const vistos = new Map();
+  for (const l of [...lancamentos].sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))))
+    if (l.descricao && l.tipo === tipoForm && !vistos.has(l.descricao.toLowerCase())) vistos.set(l.descricao.toLowerCase(), l);
+  $("sugestoes").innerHTML = [...vistos.values()].slice(0, 30).map(l => `<option value="${esc(l.descricao)}">`).join("");
+  return vistos;
+}
+$("f-desc").addEventListener("change", () => {
+  const achado = atualizarSugestoes().get($("f-desc").value.trim().toLowerCase());
+  if (achado && catsDo(tipoForm).includes(achado.categoria)) { catSel = achado.categoria; desenharCats(); }
+});
+
+// --- 8.5 Abrir / fechar ---
 function setTipo(t, cat) {
   tipoForm = t;
   $("tSaida").setAttribute("aria-pressed", t === "saida");
   $("tEntrada").setAttribute("aria-pressed", t === "entrada");
-  $("f-cat").innerHTML = CATS[t].map(c => `<option>${esc(c)}</option>`).join("");
-  if (cat && CATS[t].includes(cat)) $("f-cat").value = cat;
+  $("form").dataset.tipo = t;
+  catSel = cat || null; criandoCat = false;
+  desenharCats(); atualizarSugestoes();
 }
 function abrir(tipo, item) {
-  editando = item || null; confirmaDel = false;
+  editando = item || null;
   $("fTitulo").textContent = item ? "Editar lançamento" : (tipo === "entrada" ? "Nova entrada" : "Nova saída");
   setTipo(item ? item.tipo : tipo, item?.categoria);
-  $("f-valor").value = item ? (item.valor / 100).toFixed(2).replace(".", ",") : "";
+  setValor(item ? item.valor : 0);
   $("f-desc").value = item?.descricao || "";
   $("f-data").value = item?.data || (mesAtual === hojeISO().slice(0, 7) ? hojeISO() : mesAtual + "-01");
-  $("fDel").hidden = !item; $("fDel").textContent = "Excluir"; $("fDel").classList.remove("confirma");
+  marcarData();
+  $("fDel").hidden = !item;
   $("fErro").textContent = "";
   $("veu").hidden = false;
-  setTimeout(() => $("f-valor").focus(), 50);
+  setTimeout(() => $("f-valor").focus(), 60);
 }
 function fechar() { $("veu").hidden = true; editando = null; }
 
+// --- 8.6 Aviso flutuante (toast) com "Desfazer" ---
+let toastTimer = null;
+function toast(msg, acao) {
+  const t = $("toast");
+  $("toastMsg").textContent = msg;
+  $("toastAcao").hidden = !acao;
+  $("toastAcao").onclick = async () => { t.hidden = true; await acao.fn(); };
+  if (acao) $("toastAcao").textContent = acao.rotulo;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.hidden = true, 5000);
+}
+const vibrar = () => { try { navigator.vibrate?.(12); } catch {} };
+
+// --- 8.7 Salvar e excluir ---
 $("form").addEventListener("submit", async e => {
   e.preventDefault();
-  const valor = paraCentavos($("f-valor").value);
-  if (!valor) { $("fErro").textContent = "Digite um valor maior que zero, ex.: 25,90"; return; }
+  if (!centavos) { $("fErro").textContent = "Digite o valor."; $("f-valor").focus(); return; }
+  if (!catSel) { $("fErro").textContent = "Escolha uma categoria."; return; }
   if (!$("f-data").value) { $("fErro").textContent = "Escolha a data."; return; }
-  const dado = { tipo: tipoForm, valor, descricao: $("f-desc").value.trim(), categoria: $("f-cat").value, data: $("f-data").value };
+  const dado = { tipo: tipoForm, valor: centavos, descricao: $("f-desc").value.trim(), categoria: catSel, data: $("f-data").value };
   $("fSalvar").disabled = true;
   try {
     editando ? await banco.atualizar(editando.id, dado) : await banco.criar(dado);
     mesAtual = dado.data.slice(0, 7);
-    fechar(); await recarregar();
+    const eraEdicao = !!editando;
+    fechar(); vibrar(); await recarregar();
+    toast((dado.tipo === "entrada" ? "Entrada" : "Saída") + " de " + fmt(dado.valor) + (eraEdicao ? " atualizada" : " salva"));
   } catch (err) { $("fErro").textContent = "Não salvou: " + err.message; }
   $("fSalvar").disabled = false;
 });
 $("fDel").addEventListener("click", async () => {
-  if (!confirmaDel) { confirmaDel = true; $("fDel").textContent = "Tocar de novo para excluir"; $("fDel").classList.add("confirma"); return; }
-  try { await banco.excluir(editando.id); fechar(); await recarregar(); }
-  catch (err) { $("fErro").textContent = "Não excluiu: " + err.message; }
+  const item = editando;
+  try {
+    await banco.excluir(item.id); fechar(); vibrar(); await recarregar();
+    const { tipo, valor, descricao, categoria, data } = item;
+    toast("Lançamento excluído", { rotulo: "Desfazer", fn: async () => { await banco.criar({ tipo, valor, descricao, categoria, data }); await recarregar(); } });
+  } catch (err) { $("fErro").textContent = "Não excluiu: " + err.message; }
 });
 $("fCancel").onclick = fechar;
 $("veu").addEventListener("click", e => { if (e.target === $("veu")) fechar(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("veu").hidden) fechar(); });
 $("tSaida").onclick = () => setTipo("saida");
 $("tEntrada").onclick = () => setTipo("entrada");
 $("novaSaida").onclick = () => abrir("saida");
@@ -222,6 +361,18 @@ $("mImportar").onclick = async () => {
     await recarregar();
   } catch (err) { msg.textContent = "Falhou: " + err.message; }
 };
+
+/* ===== 9.1 Aparência: claro (padrão), escuro ou igual ao celular ===== */
+function aplicarTema(t) {
+  document.documentElement.dataset.tema = t;
+  try { localStorage.setItem("tema", t); } catch (e) {}
+  const escuro = t === "escuro" || (t === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = escuro ? "#0D1220" : "#F2F4F8";
+  document.querySelectorAll("#mTema .chip").forEach(b => b.setAttribute("aria-pressed", b.dataset.tema === t));
+}
+$("mTema").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) aplicarTema(b.dataset.tema); });
+aplicarTema(document.documentElement.dataset.tema || "claro");
 
 /* ===== 10. Modo app instalado (funciona abrindo mesmo com internet ruim) ===== */
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

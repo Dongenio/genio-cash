@@ -4,12 +4,18 @@
   --accent:#1D5BD6; --accent-fg:#FFFFFF; --in:#13804F; --out:#C0412B; --bar:#E6EAF2;
   --display:"Bricolage Grotesque", "Trebuchet MS", system-ui, sans-serif;
   --body:"Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
-  color-scheme: light;
+  --toast-link:#8DB4FF; color-scheme: light;
 }
-@media (prefers-color-scheme: dark){:root{
+/* Tema: claro é o padrão. "escuro" sempre escuro; "auto" segue o celular */
+:root[data-tema="escuro"]{
   --bg:#0D1220; --surface:#161D2E; --line:#263048; --fg:#E6EBF5; --muted:#93A0BA;
   --accent:#6EA0FF; --accent-fg:#081022; --in:#4CC98E; --out:#F07A63; --bar:#212A3F;
-  color-scheme: dark;
+  --toast-link:#1D5BD6; color-scheme: dark;
+}
+@media (prefers-color-scheme: dark){:root[data-tema="auto"]{
+  --bg:#0D1220; --surface:#161D2E; --line:#263048; --fg:#E6EBF5; --muted:#93A0BA;
+  --accent:#6EA0FF; --accent-fg:#081022; --in:#4CC98E; --out:#F07A63; --bar:#212A3F;
+  --toast-link:#1D5BD6; color-scheme: dark;
 }}
 
 *{box-sizing:border-box}
@@ -91,10 +97,41 @@ label{display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:600;
 input,select,textarea{font:500 16px var(--body);color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;width:100%}
 textarea{font-size:13px;font-family:ui-monospace,monospace;resize:vertical}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--accent);border-color:transparent}
-#f-valor{font-family:var(--display);font-size:28px;font-weight:800}
 .linha{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .acoes{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 .acoes .dir{display:flex;gap:8px;margin-left:auto}
 .erro{color:var(--out);font-size:13px;font-weight:600;min-height:1em}
 .ok{color:var(--in)}
 @media (prefers-reduced-motion:no-preference){.folha{animation:sobe .2s ease-out}@keyframes sobe{from{transform:translateY(24px);opacity:.6}}}
+
+/* ===== Valor estilo app de banco ===== */
+.valor-box{flex-direction:row;align-items:baseline;justify-content:center;gap:6px;padding:14px 8px 6px;color:var(--fg);cursor:text}
+.valor-box .moeda{font-family:var(--display);font-size:22px;font-weight:600;color:var(--muted)}
+#f-valor{font-family:var(--display);font-size:44px;font-weight:800;letter-spacing:-.02em;border:0;background:transparent;padding:0;max-width:100%;min-width:4ch;text-align:center;caret-color:transparent;font-variant-numeric:tabular-nums}
+#f-valor:focus{outline:none}
+.folha[data-tipo="saida"] #f-valor{color:var(--out)}
+.folha[data-tipo="entrada"] #f-valor{color:var(--in)}
+.valor-box.zerado #f-valor{color:var(--muted)}
+.valor-box{border-bottom:2px solid var(--line)}
+.valor-box:focus-within{border-bottom-color:var(--accent)}
+
+/* ===== Chips (categoria e data) ===== */
+.grupo{display:flex;flex-direction:column;gap:8px}
+.rotulo{font-size:13px;font-weight:600;color:var(--muted)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);background:var(--bg);color:var(--fg);border-radius:999px;padding:8px 14px;font:600 14px var(--body);cursor:pointer;transition:background .15s,border-color .15s}
+.chip[aria-pressed="true"],.chip-data.ativo{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.chip-data{width:auto;border-radius:999px;padding:7px 12px;font-size:14px;font-weight:600}
+
+/* ===== Toast ===== */
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:20;background:var(--fg);color:var(--bg);border-radius:12px;padding:12px 14px 12px 16px;display:flex;gap:14px;align-items:center;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);max-width:calc(100% - 32px)}
+.toast button{border:0;background:transparent;color:var(--toast-link);font:700 14px var(--body);cursor:pointer;padding:4px}
+@media (prefers-reduced-motion:no-preference){.toast{animation:toastIn .2s ease-out}@keyframes toastIn{from{transform:translate(-50%,12px);opacity:0}}}
+
+/* ===== Criar e remover categorias ===== */
+.chip-nova{border-style:dashed;color:var(--accent);background:transparent}
+.chip-input{width:auto;min-width:0;flex:1 1 160px;border-radius:999px;padding:8px 14px;font-size:14px;border:1.5px solid var(--accent)}
+.chip-rem{display:inline-flex;align-items:center;gap:6px;cursor:default;padding-right:6px}
+.chip-rem small{color:var(--muted);font-weight:500;font-size:11px}
+.chip-rem button{border:0;background:var(--bar);color:var(--muted);width:22px;height:22px;border-radius:50%;cursor:pointer;font-size:11px;line-height:1}
+.chip-rem button:hover{color:var(--out)}
