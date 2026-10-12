@@ -1,6 +1,6 @@
 // Service worker: guarda os arquivos do app pra abrir rápido.
 // Sempre tenta a versão nova da internet primeiro; se falhar, usa a guardada.
-const CACHE = "genio-cash-v4";
+const CACHE = "genio-cash-v5";
 const ARQUIVOS = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icon-192.png"];
 
 self.addEventListener("install", e => e.waitUntil(caches.open(CACHE).then(c => c.addAll(ARQUIVOS))));

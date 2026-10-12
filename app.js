@@ -252,12 +252,19 @@ $("f-desc").addEventListener("change", () => {
 });
 
 // --- 8.5 Abrir / fechar ---
+// Já deixa marcada a categoria que você mais usa nesse tipo (ou a primeira da lista)
+function catMaisUsada(t) {
+  const cont = {};
+  for (const l of lancamentos) if (l.tipo === t) cont[l.categoria] = (cont[l.categoria] || 0) + 1;
+  const top = Object.entries(cont).sort((a, b) => b[1] - a[1])[0];
+  return top ? top[0] : CATS[t][0];
+}
 function setTipo(t, cat) {
   tipoForm = t;
   $("tSaida").setAttribute("aria-pressed", t === "saida");
   $("tEntrada").setAttribute("aria-pressed", t === "entrada");
   $("form").dataset.tipo = t;
-  catSel = cat || null; criandoCat = false;
+  catSel = cat || catMaisUsada(t); criandoCat = false;
   desenharCats(); atualizarSugestoes();
 }
 function abrir(tipo, item) {
