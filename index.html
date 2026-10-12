@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gênio $</title>
+<meta name="theme-color" content="#1D5BD6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1220" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Gênio $">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ===== TELA DE LOGIN ===== -->
+<div class="wrap" id="telaLogin" hidden>
+  <div class="logo-grande">Gênio <b>$</b></div>
+  <p class="sub">Seu controle de entradas e saídas.</p>
+  <form id="formLogin" class="cartao" novalidate>
+    <label>E-mail<input id="lEmail" type="email" autocomplete="email" required></label>
+    <label>Senha<input id="lSenha" type="password" autocomplete="current-password" minlength="6" required></label>
+    <div class="erro" id="lErro"></div>
+    <button type="submit" class="b2 pri cheio" id="lEntrar">Entrar</button>
+    <button type="button" class="b2 cheio" id="lCriar">Criar conta</button>
+  </form>
+</div>
+
+<!-- ===== APP ===== -->
+<div class="wrap" id="telaApp" hidden>
+  <header class="top">
+    <span class="brand">Gênio <b>$</b></span>
+    <button class="b2 peq" id="abrirMenu">Dados</button>
+  </header>
+
+  <div class="saldo">
+    <span class="eyebrow">Saldo atual</span>
+    <span class="valor num" id="saldo">R$ 0,00</span>
+  </div>
+
+  <div class="mes">
+    <button class="navbtn" id="ant" aria-label="Mês anterior">‹</button>
+    <h2 id="mesNome">—</h2>
+    <button class="navbtn" id="prox" aria-label="Próximo mês">›</button>
+  </div>
+
+  <div class="resumo">
+    <div><span class="eyebrow">Entrou</span><strong class="num in" id="rIn">R$ 0,00</strong></div>
+    <div><span class="eyebrow">Saiu</span><strong class="num out" id="rOut">R$ 0,00</strong></div>
+    <div><span class="eyebrow">Sobrou</span><strong class="num" id="rRes">R$ 0,00</strong></div>
+  </div>
+
+  <section>
+    <span class="eyebrow">Para onde foi o dinheiro</span>
+    <div class="cats" id="cats"></div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Lançamentos do mês</span>
+    <div id="lista"></div>
+  </section>
+
+  <div class="fab">
+    <button class="btn saida" id="novaSaida">− Saída</button>
+    <button class="btn entrada" id="novaEntrada">+ Entrada</button>
+  </div>
+</div>
+
+<!-- ===== FOLHA: LANÇAMENTO ===== -->
+<div class="veu" id="veu" hidden>
+  <form class="folha" id="form" novalidate>
+    <h2 id="fTitulo">Novo lançamento</h2>
+    <div class="seg" role="group" aria-label="Tipo">
+      <button type="button" class="s" id="tSaida" aria-pressed="true">Saída</button>
+      <button type="button" class="e" id="tEntrada" aria-pressed="false">Entrada</button>
+    </div>
+    <label>Valor (R$)<input id="f-valor" inputmode="decimal" placeholder="0,00" autocomplete="off"></label>
+    <label>Descrição<input id="f-desc" placeholder="Ex.: Almoço, Pix do cliente" maxlength="80" autocomplete="off"></label>
+    <div class="linha">
+      <label>Categoria<select id="f-cat"></select></label>
+      <label>Data<input id="f-data" type="date"></label>
+    </div>
+    <div class="erro" id="fErro"></div>
+    <div class="acoes">
+      <button type="button" class="b2 del" id="fDel" hidden>Excluir</button>
+      <div class="dir">
+        <button type="button" class="b2" id="fCancel">Cancelar</button>
+        <button type="submit" class="b2 pri" id="fSalvar">Salvar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ===== FOLHA: DADOS (exportar / importar / sair) ===== -->
+<div class="veu" id="veuMenu" hidden>
+  <div class="folha">
+    <h2>Seus dados</h2>
+    <p class="sub" id="mEmail"></p>
+    <button class="b2 cheio" id="mExportar">Baixar backup (.json)</button>
+    <label>Importar lançamentos (cole o backup aqui)
+      <textarea id="mTexto" rows="4" placeholder='[{"tipo":"saida","valor":2590,...}]'></textarea>
+    </label>
+    <button class="b2 cheio" id="mImportar">Importar</button>
+    <div class="erro" id="mMsg"></div>
+    <div class="acoes">
+      <button class="b2 del" id="mSair">Sair da conta</button>
+      <div class="dir"><button class="b2" id="mFechar">Fechar</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- Biblioteca do Supabase, depois sua configuração, depois o app -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
