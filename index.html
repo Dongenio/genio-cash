@@ -16,9 +16,15 @@
 <meta name="apple-mobile-web-app-title" content="Gênio $">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
+
+<!-- ===== CARREGANDO (aparece na hora, antes do resto) ===== -->
+<div class="splash" id="splash">
+  <div class="logo-grande">Gênio <b>$</b></div>
+  <div class="spinner" aria-label="Carregando"></div>
+</div>
 
 <!-- ===== TELA DE LOGIN ===== -->
 <div class="wrap" id="telaLogin" hidden>
@@ -26,15 +32,36 @@
   <p class="sub">Seu controle de entradas e saídas.</p>
   <form id="formLogin" class="cartao" novalidate>
     <label>E-mail<input id="lEmail" type="email" autocomplete="email" required></label>
-    <label>Senha<input id="lSenha" type="password" autocomplete="current-password" minlength="6" required></label>
+    <label>Senha
+      <span class="senha-box"><input id="lSenha" type="password" autocomplete="current-password" minlength="6" required>
+      <button type="button" class="olho" data-alvo="lSenha" aria-label="Mostrar senha">👁</button></span>
+    </label>
     <div class="erro" id="lErro"></div>
     <button type="submit" class="b2 pri cheio" id="lEntrar">Entrar</button>
     <button type="button" class="b2 cheio" id="lCriar">Criar conta</button>
+    <button type="button" class="link" id="lEsqueci">Esqueci minha senha</button>
+  </form>
+</div>
+
+<!-- ===== TELA: NOVA SENHA (link do e-mail ou "Trocar senha") ===== -->
+<div class="wrap" id="telaSenha" hidden>
+  <div class="logo-grande">Gênio <b>$</b></div>
+  <p class="sub" id="sTexto">Crie sua nova senha.</p>
+  <form id="formSenha" class="cartao" novalidate>
+    <label>Nova senha
+      <span class="senha-box"><input id="sNova" type="password" autocomplete="new-password" minlength="6">
+      <button type="button" class="olho" data-alvo="sNova" aria-label="Mostrar senha">👁</button></span>
+    </label>
+    <label>Repita a nova senha<input id="sRepete" type="password" autocomplete="new-password" minlength="6"></label>
+    <div class="erro" id="sErro"></div>
+    <button type="submit" class="b2 pri cheio" id="sSalvar">Salvar nova senha</button>
+    <button type="button" class="link" id="sCancelar" hidden>Cancelar</button>
   </form>
 </div>
 
 <!-- ===== APP ===== -->
 <div class="wrap" id="telaApp" hidden>
+  <div class="offline" id="offline" hidden></div>
   <header class="top">
     <span class="brand">Gênio <b>$</b></span>
     <button class="b2 peq" id="abrirMenu">Dados</button>
@@ -50,6 +77,15 @@
     <h2 id="mesNome">—</h2>
     <button class="navbtn" id="prox" aria-label="Próximo mês">›</button>
   </div>
+
+  <nav class="abas" role="tablist">
+    <button type="button" role="tab" id="abaExtrato" aria-selected="true">Extrato</button>
+    <button type="button" role="tab" id="abaContas" aria-selected="false">Contas do mês <span class="badge" id="badgeContas" hidden></span></button>
+  </nav>
+
+  <!-- ===== ABA EXTRATO ===== -->
+  <div class="view" id="viewExtrato">
+  <button type="button" class="alerta" id="alertaContas" hidden></button>
 
   <div class="resumo">
     <div><span class="eyebrow">Entrou</span><strong class="num in" id="rIn">R$ 0,00</strong></div>
@@ -70,6 +106,20 @@
   <div class="fab">
     <button class="btn saida" id="novaSaida">− Saída</button>
     <button class="btn entrada" id="novaEntrada">+ Entrada</button>
+  </div>
+  </div>
+
+  <!-- ===== ABA CONTAS DO MÊS ===== -->
+  <div class="view" id="viewContas" hidden>
+    <div class="resumo duas">
+      <div><span class="eyebrow">Falta pagar</span><strong class="num out" id="cAPagar">R$ 0,00</strong><small id="cAPagarQt"></small></div>
+      <div><span class="eyebrow">Já pago</span><strong class="num in" id="cPago">R$ 0,00</strong><small id="cPagoQt"></small></div>
+    </div>
+    <div class="progresso" aria-hidden="true"><i id="cBarra"></i></div>
+    <div id="listaContas"></div>
+    <div class="fab">
+      <button class="btn conta" id="novaConta">+ Nova conta</button>
+    </div>
   </div>
 </div>
 
@@ -110,6 +160,84 @@
   </form>
 </div>
 
+<!-- ===== FOLHA: CONTA (cadastrar / editar) ===== -->
+<div class="veu" id="veuConta" hidden>
+  <form class="folha folha-conta" id="formConta" novalidate>
+    <h2 id="cTitulo">Nova conta</h2>
+    <label>Nome da conta<input id="c-nome" placeholder="Ex.: Luz, Cartão Nubank, Aluguel" maxlength="40" autocomplete="off"></label>
+    <div class="grupo">
+      <span class="rotulo" id="cValorRotulo">Valor</span>
+      <label class="valor-box zerado" for="c-valor">
+        <span class="moeda">R$</span>
+        <input id="c-valor" inputmode="numeric" autocomplete="off" aria-label="Valor da conta" value="0,00">
+      </label>
+      <div class="chips"><button type="button" class="chip" id="c-variavel" aria-pressed="false">O valor muda todo mês</button></div>
+    </div>
+    <div class="linha">
+      <label>Vence todo dia<input id="c-dia" type="number" inputmode="numeric" min="1" max="31" placeholder="10"></label>
+      <div class="grupo">
+        <span class="rotulo">Repete</span>
+        <div class="chips" id="c-rep">
+          <button type="button" class="chip" data-rep="sempre">Todo mês</button>
+          <button type="button" class="chip" data-rep="unica">Só este mês</button>
+          <button type="button" class="chip" data-rep="parcelas">Parcelado</button>
+        </div>
+      </div>
+    </div>
+    <div class="linha" id="c-parc-box" hidden>
+      <label>Total de parcelas<input id="c-parc" type="number" inputmode="numeric" min="2" max="120" placeholder="10"></label>
+      <label>Parcela deste mês<input id="c-parcAtual" type="number" inputmode="numeric" min="1" max="120" placeholder="1"></label>
+    </div>
+    <div class="grupo">
+      <span class="rotulo">Categoria (quando pagar, entra como saída nela)</span>
+      <div class="chips" id="c-cats"></div>
+    </div>
+    <div class="erro" id="cErro"></div>
+    <div class="acoes">
+      <button type="button" class="b2 del" id="cEncerrar" hidden>Parar de cobrar</button>
+      <div class="dir">
+        <button type="button" class="b2" id="cCancel">Cancelar</button>
+        <button type="submit" class="b2 pri" id="cSalvar">Salvar</button>
+      </div>
+    </div>
+  </form>
+</div>
+
+<!-- ===== FOLHA: PAGAR CONTA ===== -->
+<div class="veu" id="veuPagar" hidden>
+  <form class="folha folha-conta" id="formPagar" novalidate>
+    <h2 id="pTitulo">Pagar conta</h2>
+    <p class="sub" id="pSub"></p>
+    <div id="pAberto">
+      <div class="grupo">
+        <span class="rotulo">Valor pago</span>
+        <label class="valor-box zerado" for="p-valor">
+          <span class="moeda">R$</span>
+          <input id="p-valor" inputmode="numeric" autocomplete="off" aria-label="Valor pago" value="0,00">
+        </label>
+      </div>
+      <div class="grupo">
+        <span class="rotulo">Pago em</span>
+        <div class="chips">
+          <button type="button" class="chip" id="pHoje">Hoje</button>
+          <button type="button" class="chip" id="pOntem">Ontem</button>
+          <input id="p-data" type="date" class="chip-data" aria-label="Escolher outra data">
+        </div>
+      </div>
+      <p class="nota" id="pNota"></p>
+    </div>
+    <div class="erro" id="pErro"></div>
+    <div class="acoes">
+      <button type="button" class="b2 del" id="pDesmarcar" hidden>Desmarcar pagamento</button>
+      <button type="button" class="b2" id="pEditar">Editar conta</button>
+      <div class="dir">
+        <button type="button" class="b2" id="pCancel">Fechar</button>
+        <button type="submit" class="b2 pri" id="pConfirmar">Confirmar pagamento</button>
+      </div>
+    </div>
+  </form>
+</div>
+
 <!-- ===== AVISO FLUTUANTE ===== -->
 <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastAcao" hidden>Desfazer</button></div>
 
@@ -138,6 +266,7 @@
     <div class="erro" id="mMsg"></div>
     <div class="acoes">
       <button class="b2 del" id="mSair">Sair da conta</button>
+      <button class="b2" id="mSenha">Trocar senha</button>
       <div class="dir"><button class="b2" id="mFechar">Fechar</button></div>
     </div>
   </div>
@@ -145,7 +274,7 @@
 
 <!-- Biblioteca do Supabase, depois sua configuração, depois o app -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="config.js?v=5"></script>
-<script src="app.js?v=5"></script>
+<script src="config.js?v=7"></script>
+<script src="app.js?v=7"></script>
 </body>
 </html>

@@ -18,6 +18,8 @@ let lancamentos = [];
 let minhasCats = [];                     // categorias criadas por você: [{id,tipo,nome}]                    // [{id,tipo,valor,descricao,categoria,data,criado_em}]
 let mesAtual = hojeISO().slice(0, 7);    // "AAAA-MM"
 let usuario = null;
+let contas = [], pagamentos = [];        // contas do mês e quais já foram pagas
+let aba = "extrato";
 
 /* ===== 4. Utilidades ===== */
 const $ = id => document.getElementById(id);
@@ -55,50 +57,181 @@ const banco = {
     return data;
   },
   async criarCat(x)    { const { error } = await sb.from("categorias").insert(x); if (error) throw error; },
-  async excluirCat(id) { const { error } = await sb.from("categorias").delete().eq("id", id); if (error) throw error; }
+  async excluirCat(id) { const { error } = await sb.from("categorias").delete().eq("id", id); if (error) throw error; },
+
+  // Lançamento que devolve o registro criado (pra ligar o pagamento a ele)
+  async criarRetornando(x) {
+    const { data, error } = await sb.from("lancamentos").insert(x).select().single();
+    if (error) throw error;
+    return data;
+  },
+
+  // Contas do mês (tabelas "contas" e "pagamentos")
+  async listarContas() {
+    const { data, error } = await sb.from("contas").select("*").order("dia");
+    if (error) throw error;
+    return data;
+  },
+  async criarConta(x)        { const { error } = await sb.from("contas").insert(x); if (error) throw error; },
+  async atualizarConta(id, x){ const { error } = await sb.from("contas").update(x).eq("id", id); if (error) throw error; },
+  async listarPagamentos() {
+    const { data, error } = await sb.from("pagamentos").select("*");
+    if (error) throw error;
+    return data;
+  },
+  async criarPagamento(x)    { const { error } = await sb.from("pagamentos").insert(x); if (error) throw error; },
+  async excluirPagamento(id) { const { error } = await sb.from("pagamentos").delete().eq("id", id); if (error) throw error; }
 };
+// Busca tudo AO MESMO TEMPO (antes era uma consulta depois da outra)
+// e guarda uma cópia no aparelho, pra próxima abertura ser instantânea.
+const chaveCache = () => "gc-cache-" + (usuario?.id || "x");
+function salvarCache() {
+  try { localStorage.setItem(chaveCache(), JSON.stringify({ lancamentos, minhasCats, contas, pagamentos, em: Date.now() })); } catch (e) {}
+}
+function lerCache() {
+  try {
+    const c = JSON.parse(localStorage.getItem(chaveCache()) || "null");
+    if (!c) return false;
+    ({ lancamentos, minhasCats, contas, pagamentos } = c);
+    return true;
+  } catch (e) { return false; }
+}
+function avisoOffline(msg) { $("offline").hidden = !msg; $("offline").textContent = msg || ""; }
+
 async function recarregar() {
-  try { lancamentos = await banco.listar(); } catch (e) { console.error(e); }
-  try { minhasCats = await banco.listarCats(); } catch (e) { console.error(e); minhasCats = []; }
+  const [l, c, k, p] = await Promise.allSettled([banco.listar(), banco.listarCats(), banco.listarContas(), banco.listarPagamentos()]);
+  if (l.status === "rejected") {
+    console.error(l.reason);
+    avisoOffline(lancamentos.length
+      ? "Sem conexão com o servidor. Mostrando os dados salvos neste aparelho."
+      : "Não consegui falar com o servidor. Confira sua internet e tente de novo.");
+  } else {
+    avisoOffline("");
+    lancamentos = l.value;
+    minhasCats = c.status === "fulfilled" ? c.value : [];
+    contas = k.status === "fulfilled" ? k.value : [];
+    pagamentos = p.status === "fulfilled" ? p.value : [];
+    salvarCache();
+  }
   render(); desenharMinhasCats();
 }
 
-/* ===== 6. Login ===== */
+/* ===== 6. Login, recuperação de senha e troca de telas ===== */
+const SITE = location.origin + location.pathname;   // pra onde o link do e-mail volta
+
+function traduzErro(m) {
+  if (/Invalid login/i.test(m)) return "E-mail ou senha incorretos. Esqueceu? Toque em “Esqueci minha senha”.";
+  if (/already registered/i.test(m)) return "Esse e-mail já tem conta. Toque em Entrar.";
+  if (/Email not confirmed/i.test(m)) return "Confirme seu e-mail pelo link que chegou na caixa de entrada.";
+  if (/rate limit|too many/i.test(m)) return "Muitas tentativas seguidas. Espere alguns minutos e tente de novo.";
+  if (/at least 6|should be at least/i.test(m)) return "A senha precisa ter pelo menos 6 caracteres.";
+  if (/same.*password|different from the old/i.test(m)) return "A nova senha precisa ser diferente da antiga.";
+  if (/fetch|network|Load failed/i.test(m)) return "Sem resposta do servidor. Confira a internet. Se o app ficou mais de 7 dias sem uso, o servidor grátis pode ter pausado.";
+  return m;
+}
+function mostrarTela(t) {          // "splash" | "login" | "senha" | "app"
+  $("splash").hidden = t !== "splash";
+  $("telaLogin").hidden = t !== "login";
+  $("telaSenha").hidden = t !== "senha";
+  $("telaApp").hidden = t !== "app";
+}
+
 async function entrar(criar) {
   const email = $("lEmail").value.trim(), senha = $("lSenha").value;
   $("lErro").className = "erro";
   if (!email || senha.length < 6) { $("lErro").textContent = "Preencha o e-mail e uma senha de pelo menos 6 caracteres."; return; }
   $("lEntrar").disabled = $("lCriar").disabled = true;
-  const r = criar
-    ? await sb.auth.signUp({ email, password: senha })
-    : await sb.auth.signInWithPassword({ email, password: senha });
-  $("lEntrar").disabled = $("lCriar").disabled = false;
-  if (r.error) { $("lErro").textContent = traduzErro(r.error.message); return; }
-  if (criar && !r.data.session) {
-    $("lErro").className = "erro ok";
-    $("lErro").textContent = "Conta criada! Confirme pelo link que chegou no seu e-mail e depois toque em Entrar.";
-  }
-}
-function traduzErro(m) {
-  if (/Invalid login/i.test(m)) return "E-mail ou senha incorretos.";
-  if (/already registered/i.test(m)) return "Esse e-mail já tem conta. Toque em Entrar.";
-  if (/Email not confirmed/i.test(m)) return "Confirme seu e-mail pelo link que chegou na caixa de entrada.";
-  return m;
+  try {
+    const r = criar
+      ? await sb.auth.signUp({ email, password: senha, options: { emailRedirectTo: SITE } })
+      : await sb.auth.signInWithPassword({ email, password: senha });
+    if (r.error) { $("lErro").textContent = traduzErro(r.error.message); return; }
+    if (criar && !r.data.session) {
+      $("lErro").className = "erro ok";
+      $("lErro").textContent = "Conta criada! Confirme pelo link que chegou no seu e-mail e depois toque em Entrar.";
+    }
+  } catch (e) { $("lErro").textContent = traduzErro(String(e.message || e)); }
+  finally { $("lEntrar").disabled = $("lCriar").disabled = false; }
 }
 $("formLogin").addEventListener("submit", e => { e.preventDefault(); entrar(false); });
 $("lCriar").onclick = () => entrar(true);
 
-// Troca de tela conforme a pessoa está logada ou não
-sb.auth.onAuthStateChange((_evento, sessao) => {
-  usuario = sessao?.user || null;
-  $("telaLogin").hidden = !!usuario;
-  $("telaApp").hidden = !usuario;
-  if (usuario) { $("mEmail").textContent = usuario.email; recarregar(); }
-  else { lancamentos = []; }
+// "Esqueci minha senha": manda um link pro e-mail
+$("lEsqueci").onclick = async () => {
+  const email = $("lEmail").value.trim();
+  $("lErro").className = "erro";
+  if (!email) { $("lErro").textContent = "Digite seu e-mail acima e toque de novo em “Esqueci minha senha”."; $("lEmail").focus(); return; }
+  $("lEsqueci").disabled = true;
+  try {
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: SITE });
+    if (error) throw error;
+    $("lErro").className = "erro ok";
+    $("lErro").textContent = "Pronto! Se esse e-mail tiver conta, chega um link em instantes (olhe o spam também). Abra o link neste aparelho.";
+  } catch (e) { $("lErro").textContent = traduzErro(String(e.message || e)); }
+  finally { $("lEsqueci").disabled = false; }
+};
+
+// Mostrar/esconder senha (👁)
+document.addEventListener("click", e => {
+  const b = e.target.closest(".olho"); if (!b) return;
+  const i = $(b.dataset.alvo); i.type = i.type === "password" ? "text" : "password";
 });
+
+// Tela de nova senha
+let trocandoPeloMenu = false;
+function abrirNovaSenha(peloMenu) {
+  trocandoPeloMenu = peloMenu;
+  $("sTexto").textContent = peloMenu ? "Escolha uma nova senha." : "Você entrou pelo link do e-mail. Agora crie sua nova senha.";
+  $("sCancelar").hidden = !peloMenu;
+  $("sNova").value = $("sRepete").value = ""; $("sErro").textContent = "";
+  mostrarTela("senha");
+  setTimeout(() => $("sNova").focus(), 60);
+}
+$("formSenha").addEventListener("submit", async e => {
+  e.preventDefault();
+  const a = $("sNova").value, b = $("sRepete").value;
+  if (a.length < 6) { $("sErro").textContent = "A senha precisa ter pelo menos 6 caracteres."; return; }
+  if (a !== b) { $("sErro").textContent = "As duas senhas não são iguais."; return; }
+  $("sSalvar").disabled = true;
+  try {
+    const { error } = await sb.auth.updateUser({ password: a });
+    if (error) throw error;
+    history.replaceState(null, "", SITE);            // limpa o código do link da barra de endereço
+    mostrarTela("app"); recarregar();
+    toast("Senha alterada. Use a nova senha da próxima vez.");
+  } catch (err) { $("sErro").textContent = traduzErro(String(err.message || err)); }
+  finally { $("sSalvar").disabled = false; }
+});
+$("sCancelar").onclick = () => mostrarTela("app");
+
+// Troca de tela conforme a pessoa está logada ou não
+let iniciou = false;
+sb.auth.onAuthStateChange((evento, sessao) => {
+  const novoUsuario = sessao?.user || null;
+  const trocouDeConta = novoUsuario?.id !== usuario?.id;
+  usuario = novoUsuario;
+  if (evento === "PASSWORD_RECOVERY") { abrirNovaSenha(false); return; }   // veio do link "esqueci minha senha"
+  if (!usuario) {
+    lancamentos = []; minhasCats = []; contas = []; pagamentos = [];
+    mostrarTela("login"); return;
+  }
+  if ($("telaSenha").hidden === false) return;                              // está criando a nova senha
+  $("mEmail").textContent = usuario.email;
+  mostrarTela("app");
+  if (trocouDeConta || !iniciou) {
+    iniciou = true;
+    if (lerCache()) render();                                               // mostra na hora o que já tinha
+    recarregar();                                                           // e atualiza em segundo plano
+  }
+});
+// Se em 8 s nada respondeu, sai do "carregando" e mostra o login com aviso
+setTimeout(() => {
+  if (!$("splash").hidden) { mostrarTela("login"); $("lErro").className = "erro"; $("lErro").textContent = traduzErro("fetch"); }
+}, 8000);
 
 /* ===== 7. Desenhar a tela ===== */
 function render() {
+  renderContas();                          // aba Contas do mês + aviso no extrato
   const hoje = hojeISO();
   let saldo = 0;
   for (const l of lancamentos) if (l.data <= hoje) saldo += l.tipo === "entrada" ? l.valor : -l.valor;
@@ -323,7 +456,13 @@ $("fDel").addEventListener("click", async () => {
 });
 $("fCancel").onclick = fechar;
 $("veu").addEventListener("click", e => { if (e.target === $("veu")) fechar(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("veu").hidden) fechar(); });
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (!$("veu").hidden) fechar();
+  else if (!$("veuConta").hidden) fecharConta();
+  else if (!$("veuPagar").hidden) fecharPagar();
+  else if (!$("veuMenu").hidden) $("veuMenu").hidden = true;
+});
 $("tSaida").onclick = () => setTipo("saida");
 $("tEntrada").onclick = () => setTipo("entrada");
 $("novaSaida").onclick = () => abrir("saida");
@@ -339,7 +478,12 @@ $("prox").onclick = () => { mesAtual = somaMes(mesAtual, 1); render(); };
 $("abrirMenu").onclick = () => { $("mMsg").textContent = ""; $("veuMenu").hidden = false; };
 $("mFechar").onclick = () => { $("veuMenu").hidden = true; };
 $("veuMenu").addEventListener("click", e => { if (e.target === $("veuMenu")) $("veuMenu").hidden = true; });
-$("mSair").onclick = async () => { $("veuMenu").hidden = true; await sb.auth.signOut(); };
+$("mSair").onclick = async () => {
+  $("veuMenu").hidden = true;
+  try { localStorage.removeItem(chaveCache()); } catch (e) {}
+  try { await sb.auth.signOut(); } catch (e) { mostrarTela("login"); }
+};
+$("mSenha").onclick = () => { $("veuMenu").hidden = true; abrirNovaSenha(true); };
 
 $("mExportar").onclick = () => {
   const limpos = lancamentos.map(({ tipo, valor, descricao, categoria, data }) => ({ tipo, valor, descricao, categoria, data }));
@@ -380,6 +524,265 @@ function aplicarTema(t) {
 }
 $("mTema").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) aplicarTema(b.dataset.tema); });
 aplicarTema(document.documentElement.dataset.tema || "claro");
+
+/* ===== 11. Contas do mês ===== */
+// Uma "conta" é uma cobrança que se repete (luz, aluguel...) ou parcelada.
+// Um "pagamento" marca que a conta daquele mês foi paga e aponta pro lançamento de saída criado.
+
+// --- 11.1 Campo de valor reaproveitável (mesmo estilo de app de banco) ---
+function campoValor(id) {
+  let c = 0, sugerido = false;        // sugerido = valor previsto: o 1º número digitado substitui ele
+  const el = $(id), box = el.closest(".valor-box");
+  const set = (v, sug = false) => {
+    c = v; sugerido = sug && v > 0; el.value = fmtCampo(v);
+    el.style.width = (el.value.length + 0.2) + "ch";
+    box.classList.toggle("zerado", v === 0);
+    box.classList.toggle("sugerido", sugerido);
+    requestAnimationFrame(() => el.setSelectionRange(el.value.length, el.value.length));
+  };
+  // Controla cada tecla: número entra pela direita, apagar tira o último
+  el.addEventListener("beforeinput", e => {
+    if (e.inputType === "insertCompositionText") return;          // teclados que não deixam interceptar: cai no "input" abaixo
+    e.preventDefault();
+    if (e.inputType.startsWith("insert")) {
+      const d = (e.data || "").replace(/\D/g, ""); if (!d) return;
+      set(Number((String(sugerido ? 0 : c) + d).slice(-10)));
+    } else if (e.inputType.startsWith("delete")) set(sugerido ? 0 : Math.floor(c / 10));
+  });
+  el.addEventListener("input", () => set(Number(el.value.replace(/\D/g, "").slice(0, 10) || 0)));
+  el.addEventListener("focus", () => set(c, sugerido));
+  el.addEventListener("click", () => set(c, sugerido));
+  return { get: () => c, set };
+}
+const valorConta = campoValor("c-valor"), valorPago = campoValor("p-valor");
+
+// --- 11.2 Cálculos de datas e situação ---
+function mesesEntre(a, b) { const [a1, m1] = a.split("-").map(Number), [a2, m2] = b.split("-").map(Number); return (a2 - a1) * 12 + (m2 - m1); }
+function vencimentoNoMes(dia, ym) {
+  const [a, m] = ym.split("-").map(Number);
+  const ultimo = new Date(a, m, 0).getDate();               // dia 31 em fevereiro vira 28/29
+  return ym + "-" + String(Math.min(dia, ultimo)).padStart(2, "0");
+}
+function diasAte(iso) { const [a, m, d] = iso.split("-").map(Number), [ha, hm, hd] = hojeISO().split("-").map(Number); return Math.round((new Date(a, m - 1, d) - new Date(ha, hm - 1, hd)) / 864e5); }
+
+// Quais contas valem no mês, com situação de cada uma
+function contasDoMes(ym) {
+  const out = [];
+  for (const c of contas) {
+    if (ym < c.inicio || (c.fim && ym > c.fim)) continue;
+    const n = mesesEntre(c.inicio, ym);
+    if (c.parcelas && n >= c.parcelas) continue;
+    const venc = vencimentoNoMes(c.dia, ym);
+    const pg = pagamentos.find(p => p.conta_id === c.id && p.mes === ym) || null;
+    let st;
+    if (pg) st = { cod: "paga", txt: "Paga em " + pg.pago_em.slice(8, 10) + "/" + pg.pago_em.slice(5, 7) };
+    else {
+      const d = diasAte(venc);
+      if (d < 0) st = { cod: "atrasada", txt: "Atrasada " + (-d) + (d === -1 ? " dia" : " dias") };
+      else if (d === 0) st = { cod: "hoje", txt: "Vence hoje" };
+      else if (d <= 3) st = { cod: "perto", txt: d === 1 ? "Vence amanhã" : "Vence em " + d + " dias" };
+      else st = { cod: "aberta", txt: "Vence dia " + venc.slice(8, 10) };
+    }
+    out.push({ c, venc, pg, st, parcela: c.parcelas && c.parcelas > 1 ? (n + 1) + "/" + c.parcelas : null });
+  }
+  return out.sort((a, b) => a.venc.localeCompare(b.venc) || a.c.nome.localeCompare(b.c.nome));
+}
+
+// --- 11.3 Desenhar a aba e o aviso ---
+function renderContas() {
+  const lista = contasDoMes(mesAtual);
+  let aPagar = 0, pago = 0, nA = 0, nP = 0;
+  for (const x of lista) {
+    if (x.pg) { pago += x.pg.valor; nP++; } else { aPagar += x.c.valor; nA++; }
+  }
+  const variaveisAbertas = lista.filter(x => !x.pg && x.c.variavel).length;
+  $("cAPagar").textContent = fmt(aPagar) + (variaveisAbertas ? "*" : "");
+  $("cAPagarQt").textContent = nA ? nA + (nA === 1 ? " conta" : " contas") + (variaveisAbertas ? " · *valor previsto" : "") : "tudo pago 🎉";
+  $("cPago").textContent = fmt(pago);
+  $("cPagoQt").textContent = nP + (nP === 1 ? " conta" : " contas");
+  $("cBarra").style.width = (lista.length ? nP / lista.length * 100 : 0) + "%";
+
+  $("listaContas").innerHTML = lista.length ? lista.map(x => `
+    <button type="button" class="conta-item st-${x.st.cod}" data-id="${esc(x.c.id)}">
+      <span class="dia-box"><small>dia</small><b>${x.venc.slice(8, 10)}</b></span>
+      <span class="conta-info">
+        <span class="desc">${esc(x.c.nome)}${x.parcela ? ` <small class="parc">${x.parcela}</small>` : ""}</span>
+        <span class="pill">${esc(x.st.txt)}</span>
+      </span>
+      <span class="conta-valor num">${x.pg ? fmt(x.pg.valor) : (x.c.valor ? (x.c.variavel ? "~ " : "") + fmt(x.c.valor) : "valor varia")}
+        <span class="acao">${x.pg ? "✓ Paga" : "Pagar"}</span></span>
+    </button>`).join("")
+    : `<div class="vazio"><b>Nenhuma conta em ${esc(nomeMes(mesAtual))}</b><br>Cadastre luz, água, cartão, aluguel… em <b>+ Nova conta</b>.<br>Elas aparecem todo mês sozinhas.</div>`;
+
+  // Aviso: contas do mês de HOJE atrasadas ou vencendo em até 3 dias
+  const mesHoje = hojeISO().slice(0, 7);
+  const urgentes = contasDoMes(mesHoje).filter(x => ["atrasada", "hoje", "perto"].includes(x.st.cod));
+  const atrasadas = urgentes.filter(x => x.st.cod === "atrasada").length;
+  $("badgeContas").hidden = !urgentes.length;
+  $("badgeContas").textContent = urgentes.length;
+  $("badgeContas").classList.toggle("vermelho", atrasadas > 0);
+  const al = $("alertaContas");
+  al.hidden = !urgentes.length || mesAtual !== mesHoje;
+  if (urgentes.length) {
+    const nomes = urgentes.slice(0, 3).map(x => x.c.nome).join(", ") + (urgentes.length > 3 ? "…" : "");
+    al.className = "alerta" + (atrasadas ? " vermelho" : "");
+    const prox = urgentes.length - atrasadas;
+    const titulo = [atrasadas ? atrasadas + (atrasadas === 1 ? " atrasada" : " atrasadas") : "",
+                    prox ? prox + (prox === 1 ? " vence em breve" : " vencem em breve") : ""].filter(Boolean).join(" · ");
+    al.innerHTML = `<b>${atrasadas ? "⚠️" : "🔔"} Contas: ${titulo}</b><span>${esc(nomes)} · Ver contas ›</span>`;
+  }
+}
+
+// --- 11.4 Abas ---
+function setAba(a) {
+  aba = a;
+  $("viewExtrato").hidden = a !== "extrato";
+  $("viewContas").hidden = a !== "contas";
+  $("abaExtrato").setAttribute("aria-selected", a === "extrato");
+  $("abaContas").setAttribute("aria-selected", a === "contas");
+  window.scrollTo({ top: 0 });
+}
+$("abaExtrato").onclick = () => setAba("extrato");
+$("abaContas").onclick = () => setAba("contas");
+$("alertaContas").onclick = () => { mesAtual = hojeISO().slice(0, 7); render(); setAba("contas"); };
+
+// --- 11.5 Cadastrar / editar conta ---
+let contaEdit = null, rep = "sempre", cCat = "Contas", cVariavel = false;
+function desenharCCats() {
+  $("c-cats").innerHTML = catsDo("saida").map(c => `<button type="button" class="chip" aria-pressed="${c === cCat}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+}
+function setRep(r) {
+  rep = r;
+  document.querySelectorAll("#c-rep .chip").forEach(b => b.setAttribute("aria-pressed", b.dataset.rep === r));
+  $("c-parc-box").hidden = r !== "parcelas";
+}
+function setVariavel(v) {
+  cVariavel = v;
+  $("c-variavel").setAttribute("aria-pressed", v);
+  $("cValorRotulo").textContent = v ? "Valor aproximado (pode deixar zero)" : "Valor";
+}
+function abrirConta(c) {
+  contaEdit = c || null;
+  $("cTitulo").textContent = c ? "Editar conta" : "Nova conta";
+  $("c-nome").value = c?.nome || "";
+  valorConta.set(c?.valor || 0);
+  setVariavel(!!c?.variavel);
+  $("c-dia").value = c?.dia || "";
+  cCat = c?.categoria || "Contas"; desenharCCats();
+  if (!c) setRep("sempre");
+  else setRep(!c.parcelas ? "sempre" : c.parcelas === 1 ? "unica" : "parcelas");
+  $("c-parc").value = c?.parcelas > 1 ? c.parcelas : "";
+  $("c-parcAtual").value = c?.parcelas > 1 ? Math.min(mesesEntre(c.inicio, mesAtual) + 1, c.parcelas) : "";
+  $("cEncerrar").hidden = !c;
+  $("cErro").textContent = "";
+  $("veuConta").hidden = false;
+  setTimeout(() => $("c-nome").focus(), 60);
+}
+function fecharConta() { $("veuConta").hidden = true; contaEdit = null; }
+$("novaConta").onclick = () => abrirConta();
+$("cCancel").onclick = fecharConta;
+$("veuConta").addEventListener("click", e => { if (e.target === $("veuConta")) fecharConta(); });
+$("c-variavel").onclick = () => setVariavel(!cVariavel);
+$("c-rep").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) setRep(b.dataset.rep); });
+$("c-cats").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) { cCat = b.dataset.cat; desenharCCats(); } });
+
+$("formConta").addEventListener("submit", async e => {
+  e.preventDefault();
+  const nome = $("c-nome").value.trim(), dia = Number($("c-dia").value);
+  if (!nome) { $("cErro").textContent = "Dê um nome pra conta."; return; }
+  if (!cVariavel && !valorConta.get()) { $("cErro").textContent = "Digite o valor, ou marque “O valor muda todo mês”."; return; }
+  if (!(dia >= 1 && dia <= 31)) { $("cErro").textContent = "Dia de vencimento entre 1 e 31."; return; }
+  let parcelas = null, inicio = contaEdit?.inicio || mesAtual;
+  if (rep === "unica") { parcelas = 1; inicio = contaEdit && contaEdit.parcelas === 1 ? contaEdit.inicio : mesAtual; }
+  if (rep === "parcelas") {
+    parcelas = Number($("c-parc").value); const atual = Number($("c-parcAtual").value || 1);
+    if (!(parcelas >= 2)) { $("cErro").textContent = "Quantas parcelas no total? (2 ou mais)"; return; }
+    if (!(atual >= 1 && atual <= parcelas)) { $("cErro").textContent = "A parcela deste mês tem que ser entre 1 e " + parcelas + "."; return; }
+    inicio = somaMes(mesAtual, -(atual - 1));                 // ex.: está na 3ª → começou 2 meses atrás
+  }
+  const dado = { nome, valor: valorConta.get(), variavel: cVariavel, dia, categoria: cCat, inicio, parcelas };
+  $("cSalvar").disabled = true;
+  try {
+    contaEdit ? await banco.atualizarConta(contaEdit.id, dado) : await banco.criarConta({ ...dado, fim: null });
+    const era = !!contaEdit;
+    fecharConta(); vibrar(); await recarregar();
+    toast(nome + (era ? " atualizada" : " cadastrada") + (parcelas === 1 ? " · só em " + nomeMes(inicio).toLowerCase() : parcelas ? " · " + parcelas + " parcelas" : " · aparece todo mês"));
+  } catch (err) { $("cErro").textContent = "Não salvou: " + err.message; }
+  $("cSalvar").disabled = false;
+});
+
+// "Parar de cobrar": a conta some a partir deste mês, o histórico fica
+$("cEncerrar").onclick = async () => {
+  const c = contaEdit, fimAntes = c.fim ?? null;
+  try {
+    await banco.atualizarConta(c.id, { fim: somaMes(mesAtual, -1) });
+    fecharConta(); await recarregar();
+    toast(c.nome + " não aparece mais a partir de " + nomeMes(mesAtual).toLowerCase(),
+      { rotulo: "Desfazer", fn: async () => { await banco.atualizarConta(c.id, { fim: fimAntes }); await recarregar(); } });
+  } catch (err) { $("cErro").textContent = "Não encerrou: " + err.message; }
+};
+
+// --- 11.6 Pagar / desmarcar ---
+let pagando = null;   // { c, venc, pg, parcela }
+function marcarPData() {
+  const v = $("p-data").value;
+  $("pHoje").setAttribute("aria-pressed", v === diaISO(0));
+  $("pOntem").setAttribute("aria-pressed", v === diaISO(-1));
+  $("p-data").classList.toggle("ativo", v !== diaISO(0) && v !== diaISO(-1));
+}
+$("pHoje").onclick = () => { $("p-data").value = diaISO(0); marcarPData(); };
+$("pOntem").onclick = () => { $("p-data").value = diaISO(-1); marcarPData(); };
+$("p-data").addEventListener("change", marcarPData);
+
+function abrirPagar(x) {
+  pagando = x;
+  const vencBR = x.venc.slice(8, 10) + "/" + x.venc.slice(5, 7);
+  $("pTitulo").textContent = (x.pg ? "" : "Pagar ") + x.c.nome + (x.parcela ? " (" + x.parcela + ")" : "");
+  $("pSub").textContent = x.pg ? "Paga em " + x.pg.pago_em.split("-").reverse().join("/") + " · " + fmt(x.pg.valor) + " · vencia " + vencBR
+                               : x.st.txt + " · vencimento " + vencBR;
+  $("pAberto").hidden = !!x.pg;
+  $("pConfirmar").hidden = !!x.pg;
+  $("pDesmarcar").hidden = !x.pg;
+  valorPago.set(x.c.valor || 0, x.c.variavel);    // conta variável: o valor previsto aparece apagadinho e some ao digitar
+  $("p-data").value = diaISO(0); marcarPData();
+  $("pNota").textContent = "Vai entrar no extrato como saída em “" + x.c.categoria + "”.";
+  $("pErro").textContent = "";
+  $("veuPagar").hidden = false;
+  if (!x.pg) setTimeout(() => $("p-valor").focus(), 60);
+}
+function fecharPagar() { $("veuPagar").hidden = true; pagando = null; }
+$("pCancel").onclick = fecharPagar;
+$("veuPagar").addEventListener("click", e => { if (e.target === $("veuPagar")) fecharPagar(); });
+$("pEditar").onclick = () => { const c = pagando.c; fecharPagar(); abrirConta(c); };
+$("listaContas").addEventListener("click", e => {
+  const b = e.target.closest(".conta-item"); if (!b) return;
+  const x = contasDoMes(mesAtual).find(i => String(i.c.id) === b.dataset.id); if (x) abrirPagar(x);
+});
+
+async function desmarcar(pg) {
+  if (pg.lancamento_id) { try { await banco.excluir(pg.lancamento_id); } catch (e) { console.error(e); } }
+  try { await banco.excluirPagamento(pg.id); } catch (e) { /* já foi apagado junto com o lançamento */ }
+}
+$("formPagar").addEventListener("submit", async e => {
+  e.preventDefault();
+  const x = pagando, valor = valorPago.get(), data = $("p-data").value;
+  if (!valor) { $("pErro").textContent = "Digite quanto você pagou."; return; }
+  if (!data) { $("pErro").textContent = "Escolha a data do pagamento."; return; }
+  $("pConfirmar").disabled = true;
+  try {
+    const lanc = await banco.criarRetornando({ tipo: "saida", valor, descricao: x.c.nome + (x.parcela ? " (" + x.parcela + ")" : ""), categoria: x.c.categoria, data });
+    await banco.criarPagamento({ conta_id: x.c.id, mes: x.venc.slice(0, 7), valor, pago_em: data, lancamento_id: lanc.id });
+    fecharPagar(); vibrar(); await recarregar();
+    const pg = pagamentos.find(p => p.conta_id === x.c.id && p.mes === x.venc.slice(0, 7));
+    toast(x.c.nome + " paga · " + fmt(valor) + " no extrato", pg && { rotulo: "Desfazer", fn: async () => { await desmarcar(pg); await recarregar(); } });
+  } catch (err) { $("pErro").textContent = "Não salvou: " + err.message; }
+  $("pConfirmar").disabled = false;
+});
+$("pDesmarcar").onclick = async () => {
+  const x = pagando;
+  try { await desmarcar(x.pg); fecharPagar(); await recarregar(); toast(x.c.nome + " voltou pra “a pagar”"); }
+  catch (err) { $("pErro").textContent = "Não desmarcou: " + err.message; }
+};
 
 /* ===== 10. Modo app instalado (funciona abrindo mesmo com internet ruim) ===== */
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
