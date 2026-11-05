@@ -202,3 +202,10 @@ input[type="number"]{-moz-appearance:textfield}
 
 /* ===== Aviso de sem conexão ===== */
 .offline{background:#F5A524;color:#2A1A00;border-radius:10px;padding:10px 12px;font-size:13px;font-weight:600}
+
+/* ===== Esconder valores ===== */
+.saldo-topo{display:flex;align-items:center;gap:8px}
+.olho-btn{border:0;background:var(--bar);color:var(--muted);width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.olho-btn:hover{color:var(--fg)}
+.olho-btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
+.privado .cat .pct{visibility:hidden}          /* porcentagem também entrega valores */

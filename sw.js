@@ -2,8 +2,8 @@
 // Estratégia "mostra o guardado e atualiza por trás" (stale-while-revalidate):
 // abre com a cópia salva e, em paralelo, baixa a versão nova pra próxima vez.
 // O banco de dados (Supabase) NUNCA é guardado aqui: sempre vai na internet.
-const CACHE = "genio-cash-v7";
-const ARQUIVOS = ["./", "index.html", "style.css?v=7", "app.js?v=7", "config.js?v=7", "manifest.webmanifest", "icon-192.png",
+const CACHE = "genio-cash-v8";
+const ARQUIVOS = ["./", "index.html", "style.css?v=8", "app.js?v=8", "config.js?v=8", "manifest.webmanifest", "icon-192.png",
   "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"];
 const DE_FORA = ["cdn.jsdelivr.net", "fonts.googleapis.com", "fonts.gstatic.com"];   // biblioteca e fontes
 

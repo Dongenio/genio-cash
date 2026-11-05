@@ -24,7 +24,10 @@ let aba = "extrato";
 /* ===== 4. Utilidades ===== */
 const $ = id => document.getElementById(id);
 const brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
-const fmt = c => brl.format(c / 100);     // valores guardados em centavos (inteiro)
+// Modo privado: esconde todos os valores (pra mostrar o app pra alguém)
+let privado = false;
+try { privado = localStorage.getItem("gc-privado") === "1"; } catch (e) {}
+const fmt = c => privado ? "R$ ••••" : brl.format(c / 100);     // valores guardados em centavos (inteiro)
 function paraCentavos(txt) {
   let t = String(txt).trim().replace(/[R$\s]/g, "");
   if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
@@ -236,7 +239,7 @@ function render() {
   let saldo = 0;
   for (const l of lancamentos) if (l.data <= hoje) saldo += l.tipo === "entrada" ? l.valor : -l.valor;
   $("saldo").textContent = fmt(saldo);
-  $("saldo").classList.toggle("neg", saldo < 0);
+  $("saldo").classList.toggle("neg", saldo < 0 && !privado);   // escondido: nem a cor entrega se está negativo
 
   $("mesNome").textContent = nomeMes(mesAtual);
   const doMes = lancamentos.filter(l => l.data.startsWith(mesAtual))
@@ -246,7 +249,7 @@ function render() {
   $("rIn").textContent = fmt(ent);
   $("rOut").textContent = fmt(sai);
   $("rRes").textContent = fmt(ent - sai);
-  $("rRes").className = "num " + (ent - sai < 0 ? "out" : "");
+  $("rRes").className = "num " + (ent - sai < 0 && !privado ? "out" : "");
 
   const porCat = {};
   for (const l of doMes) if (l.tipo === "saida") porCat[l.categoria] = (porCat[l.categoria] || 0) + l.valor;
@@ -524,6 +527,24 @@ function aplicarTema(t) {
 }
 $("mTema").addEventListener("click", e => { const b = e.target.closest(".chip"); if (b) aplicarTema(b.dataset.tema); });
 aplicarTema(document.documentElement.dataset.tema || "claro");
+
+/* ===== 9.2 Esconder valores (olho ao lado do saldo) ===== */
+const ICONE_OLHO = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const ICONE_OLHO_FECHADO = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.9 17.9A10.4 10.4 0 0 1 12 19c-6.5 0-10-7-10-7a18 18 0 0 1 4.1-5.1M9.9 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-2.2 3.2M14.1 14.1a3 3 0 1 1-4.2-4.2"/><path d="M2 2l20 20"/></svg>';
+function desenharOlho() {
+  const b = $("btnPrivado");
+  b.innerHTML = privado ? ICONE_OLHO_FECHADO : ICONE_OLHO;
+  b.setAttribute("aria-pressed", privado);
+  b.setAttribute("aria-label", privado ? "Mostrar valores" : "Esconder valores");
+  b.title = privado ? "Mostrar valores" : "Esconder valores";
+  document.body.classList.toggle("privado", privado);
+}
+$("btnPrivado").onclick = () => {
+  privado = !privado;
+  try { localStorage.setItem("gc-privado", privado ? "1" : "0"); } catch (e) {}
+  desenharOlho(); render(); vibrar();
+};
+desenharOlho();
 
 /* ===== 11. Contas do mês ===== */
 // Uma "conta" é uma cobrança que se repete (luz, aluguel...) ou parcelada.
