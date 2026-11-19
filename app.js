@@ -144,6 +144,7 @@ async function entrar(criar) {
   $("lErro").className = "erro";
   if (!email || senha.length < 6) { $("lErro").textContent = "Preencha o e-mail e uma senha de pelo menos 6 caracteres."; return; }
   $("lEntrar").disabled = $("lCriar").disabled = true;
+  acabouDeEntrar = true;                          // acabou de digitar a senha da conta: não pede PIN agora
   try {
     const r = criar
       ? await sb.auth.signUp({ email, password: senha, options: { emailRedirectTo: SITE } })
@@ -208,18 +209,21 @@ $("formSenha").addEventListener("submit", async e => {
 $("sCancelar").onclick = () => mostrarTela("app");
 
 // Troca de tela conforme a pessoa está logada ou não
-let iniciou = false;
+let iniciou = false, desbloqueado = false, acabouDeEntrar = false;
 sb.auth.onAuthStateChange((evento, sessao) => {
   const novoUsuario = sessao?.user || null;
   const trocouDeConta = novoUsuario?.id !== usuario?.id;
   usuario = novoUsuario;
-  if (evento === "PASSWORD_RECOVERY") { abrirNovaSenha(false); return; }   // veio do link "esqueci minha senha"
+  if (evento === "PASSWORD_RECOVERY") { desbloqueado = true; abrirNovaSenha(false); return; }   // veio do link "esqueci minha senha"
   if (!usuario) {
     lancamentos = []; minhasCats = []; contas = []; pagamentos = [];
+    desbloqueado = false; fecharTrava();
     mostrarTela("login"); return;
   }
   if ($("telaSenha").hidden === false) return;                              // está criando a nova senha
   $("mEmail").textContent = usuario.email;
+  if (acabouDeEntrar) { desbloqueado = true; acabouDeEntrar = false; }
+  if (!desbloqueado && travaConfig() && $("telaTrava").hidden) pedirDesbloqueio();                   // tem bloqueio: pede PIN/Face ID antes de mostrar
   mostrarTela("app");
   if (trocouDeConta || !iniciou) {
     iniciou = true;
@@ -238,7 +242,8 @@ function render() {
   const hoje = hojeISO();
   let saldo = 0;
   for (const l of lancamentos) if (l.data <= hoje) saldo += l.tipo === "entrada" ? l.valor : -l.valor;
-  $("saldo").textContent = fmt(saldo);
+  const [moeda, ...resto] = fmt(saldo).split(/\s/);       // "R$" pequeno, número grande
+  $("saldo").innerHTML = `<span class="moeda-s">${esc(moeda)}</span>${esc(resto.join(" "))}`;
   $("saldo").classList.toggle("neg", saldo < 0 && !privado);   // escondido: nem a cor entrega se está negativo
 
   $("mesNome").textContent = nomeMes(mesAtual);
@@ -254,12 +259,11 @@ function render() {
   const porCat = {};
   for (const l of doMes) if (l.tipo === "saida") porCat[l.categoria] = (porCat[l.categoria] || 0) + l.valor;
   const ord = Object.entries(porCat).sort((a, b) => b[1] - a[1]);
-  const maior = ord.length ? ord[0][1] : 1;
   $("cats").innerHTML = ord.length ? ord.map(([c, v]) => `
     <div class="cat">
       <span class="nome">${esc(c)}</span>
       <span class="v num">${fmt(v)}<span class="pct">${Math.round(v / sai * 100)}%</span></span>
-      <span class="trilho"><i style="width:${(v / maior * 100).toFixed(1)}%"></i></span>
+      <span class="trilho"><i style="width:${Math.round(v / sai * 100)}%"></i></span>
     </div>`).join("")
     : `<div class="vazio">Nenhuma saída neste mês.</div>`;
 
@@ -804,6 +808,186 @@ $("pDesmarcar").onclick = async () => {
   try { await desmarcar(x.pg); fecharPagar(); await recarregar(); toast(x.c.nome + " voltou pra “a pagar”"); }
   catch (err) { $("pErro").textContent = "Não desmarcou: " + err.message; }
 };
+
+/* ===== 12. Bloqueio ao abrir: PIN de 4 dígitos + Face ID / digital ===== */
+// Fica guardado SÓ neste aparelho. O PIN nunca é salvo: só um "resumo" (hash PBKDF2) dele.
+// Face ID / digital usa o padrão WebAuthn: o próprio celular confere o rosto/dedo.
+const TEMPO_FORA = 30 * 1000;          // saiu do app por mais de 30 s? pede de novo
+const MAX_TENTATIVAS = 5;              // errou 5 vezes: sai da conta (precisa da senha do e-mail)
+const chaveTrava = () => "gc-trava-" + (usuario?.id || "x");
+const b64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
+const deB64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const ehIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const NOME_BIO = ehIOS ? "Face ID" : /Android/.test(navigator.userAgent) ? "digital" : "biometria";
+const ICONE_BIO = ehIOS ? "🙂" : "☝️";
+
+function travaConfig() { try { return JSON.parse(localStorage.getItem(chaveTrava()) || "null"); } catch (e) { return null; } }
+function salvarTrava(c) { try { c ? localStorage.setItem(chaveTrava(), JSON.stringify(c)) : localStorage.removeItem(chaveTrava()); } catch (e) {} }
+
+async function resumoPin(pin, sal) {
+  const chave = await crypto.subtle.importKey("raw", new TextEncoder().encode(pin), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", salt: deB64(sal), iterations: 150000, hash: "SHA-256" }, chave, 256);
+  return b64(bits);
+}
+async function bioDisponivel() {
+  try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); }
+  catch (e) { return false; }
+}
+async function cadastrarBio() {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: "Gênio $", id: location.hostname },
+    user: { id: crypto.getRandomValues(new Uint8Array(16)), name: usuario?.email || "genio", displayName: "Gênio $" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+    authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required", residentKey: "discouraged" },
+    timeout: 60000
+  }});
+  return b64(cred.rawId);
+}
+async function conferirBio(credId) {
+  await navigator.credentials.get({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    allowCredentials: [{ type: "public-key", id: deB64(credId) }],
+    userVerification: "required", timeout: 60000
+  }});
+  return true;
+}
+
+// --- Tela do teclado (serve pra desbloquear, criar e conferir PIN) ---
+let modoTrava = null, digitado = "", pinNovo = "", aoConcluir = null;
+function abrirTrava(modo, msg, concluir) {
+  modoTrava = modo; digitado = ""; aoConcluir = concluir || null;
+  $("tMsg").textContent = msg; $("tErro").textContent = "";
+  const cfg = travaConfig();
+  $("tBio").hidden = !(modo === "abrir" && cfg?.bio);
+  $("tBio").innerHTML = ICONE_BIO; $("tBio").setAttribute("aria-label", "Desbloquear com " + NOME_BIO);
+  $("tEsqueci").hidden = modo !== "abrir";
+  $("tCancelar").hidden = modo === "abrir";
+  desenharPontos();
+  $("telaTrava").hidden = false;
+  document.body.classList.add("trancado");
+}
+function fecharTrava() {
+  $("telaTrava").hidden = true; modoTrava = null; digitado = "";
+  document.body.classList.remove("trancado", "cortina");
+}
+function desenharPontos() {
+  [...$("tPontos").children].forEach((i, n) => i.classList.toggle("cheio", n < digitado.length));
+}
+function errouPin(msg) {
+  $("tErro").textContent = msg; digitado = ""; desenharPontos();
+  $("tPontos").classList.remove("treme"); void $("tPontos").offsetWidth; $("tPontos").classList.add("treme");
+  try { navigator.vibrate?.([40, 40, 40]); } catch {}
+}
+async function teclaPin(d) {
+  if (!modoTrava || digitado.length >= 4) return;
+  digitado += d; desenharPontos();
+  if (digitado.length < 4) return;
+  const pin = digitado;
+  await new Promise(r => setTimeout(r, 120));               // deixa ver o 4º ponto
+  const cfg = travaConfig();
+  if (modoTrava === "abrir" || modoTrava === "conferir") {
+    const ok = cfg && (await resumoPin(pin, cfg.sal)) === cfg.hash;
+    if (ok) {
+      cfg.erros = 0; salvarTrava(cfg);
+      const fn = aoConcluir; desbloqueado = true; fecharTrava(); fn && fn();
+      return;
+    }
+    cfg.erros = (cfg.erros || 0) + 1; salvarTrava(cfg);
+    const resta = MAX_TENTATIVAS - cfg.erros;
+    if (resta <= 0) { await sairPorSeguranca("PIN errado 5 vezes. Por segurança, entre de novo com seu e-mail e senha."); return; }
+    errouPin("PIN errado. " + (resta === 1 ? "Última tentativa." : "Restam " + resta + " tentativas."));
+  } else if (modoTrava === "criar1") {
+    pinNovo = pin; modoTrava = "criar2"; digitado = ""; desenharPontos();
+    $("tMsg").textContent = "Repita o PIN"; $("tErro").textContent = "";
+  } else if (modoTrava === "criar2") {
+    if (pin !== pinNovo) { modoTrava = "criar1"; $("tMsg").textContent = "Crie um PIN de 4 números"; errouPin("Os PINs não bateram. Comece de novo."); return; }
+    const sal = b64(crypto.getRandomValues(new Uint8Array(16)));
+    const atual = travaConfig();
+    salvarTrava({ sal, hash: await resumoPin(pin, sal), bio: atual?.bio || null, erros: 0 });
+    const fn = aoConcluir; fecharTrava(); desbloqueado = true; fn && fn();
+  }
+}
+$("tTeclado").addEventListener("click", e => { const b = e.target.closest("button[data-d]"); if (b) teclaPin(b.dataset.d); });
+$("tApagar").onclick = () => { digitado = digitado.slice(0, -1); desenharPontos(); };
+document.addEventListener("keydown", e => {               // no PC dá pra digitar o PIN no teclado
+  if ($("telaTrava").hidden) return;
+  if (/^[0-9]$/.test(e.key)) { e.preventDefault(); teclaPin(e.key); }
+  else if (e.key === "Backspace") { e.preventDefault(); $("tApagar").click(); }
+}, true);
+$("tCancelar").onclick = () => { fecharTrava(); desenharSeguranca(); };
+$("tBio").onclick = () => tentarBio();
+$("tEsqueci").onclick = () => sairPorSeguranca("Pra criar um PIN novo, entre com seu e-mail e senha. Se não lembrar a senha, use “Esqueci minha senha”.");
+
+async function tentarBio() {
+  const cfg = travaConfig(); if (!cfg?.bio || modoTrava !== "abrir") return;
+  try { await conferirBio(cfg.bio); cfg.erros = 0; salvarTrava(cfg); desbloqueado = true; fecharTrava(); }
+  catch (e) { /* cancelou ou falhou: continua no PIN */ }
+}
+async function sairPorSeguranca(msg) {
+  salvarTrava(null);                                         // apaga o PIN deste aparelho
+  try { localStorage.removeItem(chaveCache()); } catch (e) {}
+  fecharTrava(); desbloqueado = false;
+  try { await sb.auth.signOut(); } catch (e) {}
+  mostrarTela("login");
+  $("lErro").className = "erro"; $("lErro").textContent = msg;
+}
+
+function pedirDesbloqueio() {
+  abrirTrava("abrir", "Digite seu PIN");
+  if (travaConfig()?.bio) setTimeout(tentarBio, 300);        // já chama o Face ID/digital (se o celular deixar sem toque)
+}
+
+// --- Saiu do app e voltou ---
+let saiuEm = 0;
+document.addEventListener("visibilitychange", () => {
+  if (!usuario || !travaConfig()) return;
+  if (document.hidden) {
+    saiuEm = Date.now();
+    if ($("telaTrava").hidden) document.body.classList.add("cortina");   // esconde os valores até na tela de apps abertos
+  } else {
+    document.body.classList.remove("cortina");
+    if (desbloqueado && Date.now() - saiuEm > TEMPO_FORA && $("telaTrava").hidden) { desbloqueado = false; fecharMenusAbertos(); pedirDesbloqueio(); }
+  }
+});
+function fecharMenusAbertos() { ["veu", "veuConta", "veuPagar", "veuMenu"].forEach(id => { if ($(id)) $(id).hidden = true; }); }
+
+// --- Configuração no menu Dados ---
+async function desenharSeguranca() {
+  const cfg = travaConfig(), temBio = await bioDisponivel();
+  if (!cfg) {
+    $("segStatus").textContent = "Desligado. Qualquer pessoa com seu celular desbloqueado consegue abrir o app.";
+    $("segAcoes").innerHTML = `<button type="button" class="chip" data-acao="ativar">Ativar bloqueio com PIN</button>`;
+    return;
+  }
+  $("segStatus").textContent = "Ligado: pede " + (cfg.bio ? "PIN ou " + NOME_BIO : "PIN") + " ao abrir e quando volta depois de 30 s fora.";
+  $("segAcoes").innerHTML =
+    (temBio ? `<button type="button" class="chip" data-acao="bio" aria-pressed="${!!cfg.bio}">${cfg.bio ? "✓ " : ""}Usar ${NOME_BIO}</button>` : "") +
+    `<button type="button" class="chip" data-acao="trocar">Trocar PIN</button>` +
+    `<button type="button" class="chip" data-acao="desligar">Desligar</button>`;
+}
+async function ofereceBio() {
+  if (!(await bioDisponivel())) { toast("Bloqueio ligado. O PIN vai ser pedido ao abrir."); return; }
+  try {
+    const cfg = travaConfig(); cfg.bio = await cadastrarBio(); salvarTrava(cfg);
+    toast("Bloqueio ligado com PIN e " + NOME_BIO + ".");
+  } catch (e) { toast("Bloqueio ligado com PIN. Dá pra ativar o " + NOME_BIO + " depois em Dados."); }
+  desenharSeguranca();
+}
+$("segAcoes").addEventListener("click", async e => {
+  const a = e.target.closest("button[data-acao]")?.dataset.acao; if (!a) return;
+  $("veuMenu").hidden = true;
+  if (a === "ativar") abrirTrava("criar1", "Crie um PIN de 4 números", () => { desenharSeguranca(); ofereceBio(); });
+  if (a === "trocar") abrirTrava("conferir", "Digite o PIN atual", () => abrirTrava("criar1", "Crie o PIN novo", () => { desenharSeguranca(); toast("PIN trocado."); }));
+  if (a === "desligar") abrirTrava("conferir", "Digite o PIN pra desligar", () => { salvarTrava(null); desenharSeguranca(); toast("Bloqueio desligado neste aparelho."); });
+  if (a === "bio") {
+    const cfg = travaConfig();
+    if (cfg.bio) { cfg.bio = null; salvarTrava(cfg); toast(NOME_BIO + " desligado. Continua pedindo o PIN."); }
+    else { try { cfg.bio = await cadastrarBio(); salvarTrava(cfg); toast(NOME_BIO + " ativado."); } catch (err) { toast("Não deu pra ativar o " + NOME_BIO + " neste aparelho."); } }
+    desenharSeguranca();
+  }
+});
+$("abrirMenu").addEventListener("click", desenharSeguranca);
 
 /* ===== 10. Modo app instalado (funciona abrindo mesmo com internet ruim) ===== */
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});

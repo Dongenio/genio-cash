@@ -16,7 +16,7 @@
 <meta name="apple-mobile-web-app-title" content="Gênio $">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Figtree:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 
@@ -240,6 +240,28 @@
   </form>
 </div>
 
+<!-- ===== BLOQUEIO (PIN / Face ID) ===== -->
+<div class="trava" id="telaTrava" hidden>
+  <div class="trava-box">
+    <div class="logo-grande">Gênio <b>$</b></div>
+    <p class="trava-msg" id="tMsg">Digite seu PIN</p>
+    <div class="pontos" id="tPontos" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+    <p class="erro" id="tErro" role="alert"></p>
+    <div class="teclado" id="tTeclado">
+      <button type="button" data-d="1">1</button><button type="button" data-d="2">2</button><button type="button" data-d="3">3</button>
+      <button type="button" data-d="4">4</button><button type="button" data-d="5">5</button><button type="button" data-d="6">6</button>
+      <button type="button" data-d="7">7</button><button type="button" data-d="8">8</button><button type="button" data-d="9">9</button>
+      <button type="button" class="tecla-bio" id="tBio" aria-label="Desbloquear com biometria" hidden></button>
+      <button type="button" data-d="0">0</button>
+      <button type="button" class="tecla-apagar" id="tApagar" aria-label="Apagar">⌫</button>
+    </div>
+    <div class="trava-rodape">
+      <button type="button" class="link" id="tEsqueci">Esqueci o PIN</button>
+      <button type="button" class="link" id="tCancelar" hidden>Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <!-- ===== AVISO FLUTUANTE ===== -->
 <div class="toast" id="toast" role="status" hidden><span id="toastMsg"></span><button id="toastAcao" hidden>Desfazer</button></div>
 
@@ -248,6 +270,11 @@
   <div class="folha">
     <h2>Seus dados</h2>
     <p class="sub" id="mEmail"></p>
+    <div class="grupo">
+      <span class="rotulo">Bloqueio ao abrir</span>
+      <p class="sub" id="segStatus"></p>
+      <div class="chips" id="segAcoes"></div>
+    </div>
     <div class="grupo">
       <span class="rotulo">Aparência</span>
       <div class="chips" id="mTema">
@@ -276,7 +303,7 @@
 
 <!-- Biblioteca do Supabase, depois sua configuração, depois o app -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
-<script src="config.js?v=8"></script>
-<script src="app.js?v=8"></script>
+<script src="config.js?v=10"></script>
+<script src="app.js?v=10"></script>
 </body>
 </html>

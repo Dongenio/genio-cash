@@ -209,3 +209,119 @@ input[type="number"]{-moz-appearance:textfield}
 .olho-btn:hover{color:var(--fg)}
 .olho-btn[aria-pressed="true"]{background:var(--accent);color:var(--accent-fg)}
 .privado .cat .pct{visibility:hidden}          /* porcentagem também entrega valores */
+
+/* ===== Bloqueio (PIN / Face ID) ===== */
+.trava{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:calc(24px + env(safe-area-inset-top,0px)) 16px calc(24px + env(safe-area-inset-bottom,0px));overflow:auto}
+.trava-box{width:100%;max-width:320px;display:flex;flex-direction:column;align-items:center;gap:14px}
+.trava .logo-grande{margin-top:0;font-size:44px}
+.trava-msg{margin:0;font-weight:600;font-size:16px}
+.pontos{display:flex;gap:16px;margin:4px 0}
+.pontos i{width:14px;height:14px;border-radius:50%;border:2px solid var(--accent);transition:background .12s}
+.pontos i.cheio{background:var(--accent)}
+.pontos.treme{animation:treme .35s}
+@keyframes treme{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.trava .erro{text-align:center;min-height:1.2em;margin:0}
+.teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;width:100%}
+.teclado button{aspect-ratio:1.35;border:0;border-radius:16px;background:var(--surface);color:var(--fg);font:600 26px var(--display);cursor:pointer;box-shadow:0 1px 0 var(--line)}
+.teclado button:active{background:var(--bar)}
+.teclado .tecla-bio,.teclado .tecla-apagar{background:transparent;box-shadow:none;font-size:24px}
+.teclado .tecla-bio[hidden]{display:block!important;visibility:hidden}
+.trava-rodape{display:flex;gap:12px}
+/* Enquanto trancado ou fora do app, nada do conteúdo aparece por trás */
+body.trancado #telaApp,body.trancado .veu,body.trancado .toast{visibility:hidden}
+body.cortina #telaApp,body.cortina .veu{visibility:hidden}
+@media (prefers-reduced-motion:reduce){.pontos.treme{animation:none}}
+
+
+/* =====================================================================
+   v10 · ACABAMENTO
+   Mesma estrutura, superfícies mais suaves: menos linhas, mais respiro,
+   tipografia com pesos mais leves e cartões com sombra discreta.
+   ===================================================================== */
+:root{
+  --bg:#F5F6FA; --surface:#FFFFFF; --line:#E4E8EF; --sep:#EEF1F5; --muted:#68738A; --bar:#EDF0F5;
+  --sombra:0 1px 2px rgba(18,26,43,.04), 0 2px 8px rgba(18,26,43,.05);
+  --sombra-alta:0 8px 24px rgba(18,26,43,.10);
+  --raio:16px;
+}
+:root[data-tema="escuro"]{ --bg:#0C111D; --surface:#151C2C; --line:#232C40; --sep:#1D2536; --bar:#1F2839; --sombra:none; --sombra-alta:0 8px 24px rgba(0,0,0,.45); }
+@media (prefers-color-scheme: dark){:root[data-tema="auto"]{ --bg:#0C111D; --surface:#151C2C; --line:#232C40; --sep:#1D2536; --bar:#1F2839; --sombra:none; --sombra-alta:0 8px 24px rgba(0,0,0,.45); }}
+
+/* Respiro entre seções */
+.wrap{gap:30px;padding-block:24px calc(116px + env(safe-area-inset-bottom,0px))}
+.view{gap:30px}
+section{gap:14px}
+
+/* Tipografia */
+body{font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.eyebrow{font-size:11px;font-weight:600;letter-spacing:.08em;color:var(--muted)}
+.brand{font-size:20px;font-weight:700;letter-spacing:-.02em}
+.saldo{gap:6px}
+.saldo .valor{font-weight:700;font-size:clamp(40px,12vw,56px);letter-spacing:-.035em;line-height:1}
+.saldo .valor .moeda-s{font-size:.42em;font-weight:600;letter-spacing:0;color:var(--muted);margin-right:.22em;vertical-align:.62em}
+.saldo .valor.neg .moeda-s{color:inherit;opacity:.7}
+.mes h2{font-size:18px;font-weight:600;letter-spacing:-.01em}
+.item .desc,.conta-info .desc{font-weight:500}
+.item .val,.conta-valor{font-weight:600}
+.cat .nome{font-weight:500}
+.cat .v{font-weight:600}
+
+/* Cabeçalho e navegação */
+.b2.peq{border-color:transparent;background:var(--surface);box-shadow:var(--sombra)}
+.navbtn{border:0;background:var(--surface);box-shadow:var(--sombra);width:38px;height:38px;color:var(--muted)}
+.navbtn:hover{color:var(--fg)}
+.abas{background:var(--bar);border-radius:14px}
+.abas button{font-weight:500}
+.abas button[aria-selected="true"]{font-weight:600;box-shadow:var(--sombra)}
+
+/* Resumo do mês: cartão único, divisórias quase invisíveis */
+.resumo{border:0;background:var(--surface);border-radius:var(--raio);box-shadow:var(--sombra);padding:4px 0}
+.resumo div{padding:14px 12px;gap:4px}
+.resumo div:first-child{padding-left:16px}
+.resumo div + div{border-left:1px solid var(--sep);padding-left:12px}
+.resumo strong{font-size:clamp(13.5px,3.8vw,16px);font-weight:600;letter-spacing:-.01em;overflow:visible;text-overflow:clip}
+.progresso{margin-top:-18px;height:6px}
+
+/* Para onde foi o dinheiro: barras horizontais, cada uma = % do total gasto */
+.cats{background:var(--surface);border-radius:var(--raio);box-shadow:var(--sombra);padding:18px 16px;gap:16px}
+.cat{gap:8px 12px}
+.cat .pct{display:inline-block;min-width:3.2ch;text-align:right;margin-left:8px;font-variant-numeric:tabular-nums}
+.cat .trilho{height:6px;border-radius:999px}
+.cat .trilho i{border-radius:999px;min-width:2px}
+.cats .vazio{border:0;padding:6px 0;background:transparent}
+
+/* Extrato: cada dia vira um cartão, lançamentos separados por linha fina */
+.dia{margin-bottom:6px}
+.dia h3{font-size:12px;font-weight:600;letter-spacing:.02em;margin:14px 4px 8px}
+.dia .item{border:0;border-radius:0;margin:0;padding:14px 16px;box-shadow:inset 0 -1px 0 var(--sep)}
+.dia .item:nth-child(2){border-radius:var(--raio) var(--raio) 0 0}
+.dia .item:last-child{border-radius:0 0 var(--raio) var(--raio);box-shadow:none}
+.dia .item:nth-child(2):last-child{border-radius:var(--raio)}
+.dia{filter:drop-shadow(0 1px 2px rgba(18,26,43,.05))}
+:root[data-tema="escuro"] .dia{filter:none}
+@media (prefers-color-scheme: dark){:root[data-tema="auto"] .dia{filter:none}}
+.item .cat2{margin-top:2px}
+.vazio{border:1px dashed var(--line);background:transparent;border-radius:var(--raio)}
+
+/* Contas do mês */
+.conta-item{border:0;box-shadow:var(--sombra);border-radius:14px;padding:12px 14px}
+.st-atrasada{box-shadow:var(--sombra),inset 3px 0 0 var(--out)}
+.alerta{border:0;border-left:3px solid var(--accent);box-shadow:var(--sombra);border-radius:12px}
+.alerta.vermelho{border-left-color:var(--out)}
+
+/* Botões de Entrada/Saída: barra fixa embaixo, fora de cima do conteúdo */
+.fab{left:0;right:0;transform:none;bottom:0;justify-content:center;gap:10px;
+  padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  -webkit-backdrop-filter:saturate(1.4) blur(14px);backdrop-filter:saturate(1.4) blur(14px);
+  box-shadow:0 -1px 0 var(--sep)}
+.fab .btn{flex:1;max-width:264px;padding:14px 18px;border-radius:14px;font-weight:600;box-shadow:none}
+.toast{bottom:calc(92px + env(safe-area-inset-bottom,0px));border-radius:14px;box-shadow:var(--sombra-alta)}
+
+/* Folhas (formulários) */
+.folha{border-radius:22px 22px 0 0;box-shadow:var(--sombra-alta)}
+.veu{background:rgba(8,12,22,.42)}
+input,select,textarea{border-color:var(--line)}
+.chip{border-color:var(--line)}
+:root[data-tema="escuro"] .fab .btn{color:#0B1220}
+@media (prefers-color-scheme: dark){:root[data-tema="auto"] .fab .btn{color:#0B1220}}
